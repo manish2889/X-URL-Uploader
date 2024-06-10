@@ -168,7 +168,12 @@ async def youtube_dl_call_back(bot: Client, update: CallbackQuery):
         try:
             file_size = os.stat(download_directory).st_size
         except FileNotFoundError:
-            download_directory = download_directory + "." + "mkv"
+            if os.path.isfile(download_directory + "." + "mkv"):
+                download_directory = download_directory + "." + "mkv"
+            elif os.path.isfile(download_directory + "." + "webm"):
+                download_directory = download_directory + "." + "webm"
+            else:
+                return await update.message.edit(text='File not found in the directory.')
             # https://stackoverflow.com/a/678242/4723940
             file_size = os.stat(download_directory).st_size
         if file_size > client.config.TG_MAX_FILE_SIZE:
@@ -208,7 +213,7 @@ async def youtube_dl_call_back(bot: Client, update: CallbackQuery):
                 if client.guess_mime_type(download_directory) in ffmpeg_supported_video_mimetypes:
                     await run_cmd('ffmpeg -ss {} -i "{}" -vframes 1 "{}"'.format(random.randint(0, duration), download_directory, thumb_image_path))
             # get the correct width, height, and duration for videos greater than 10MB
-            if os.path.exists(thumb_image_path) and not client.custom_thumbnail.get(update.from_user.id):
+            if os.path.exists(thumb_image_path):
                 width = 0
                 height = 0
                 metadata = extractMetadata(createParser(thumb_image_path))
@@ -236,6 +241,7 @@ async def youtube_dl_call_back(bot: Client, update: CallbackQuery):
                 thumb_image_path = None
             start_time = time.time()
             # try to upload file
+            client.logger.info(thumb_image_path)
             if tg_send_type == "audio":
                 media = await bot.send_audio(
                     chat_id=update.message.chat.id,
@@ -312,14 +318,13 @@ async def youtube_dl_call_back(bot: Client, update: CallbackQuery):
             media_album_p: list[InputMediaPhoto] = []
             if images:
                 i = 0
-                caption = "@xurluploaderbot"
                 for image in images:
                     if os.path.exists(str(image)):
                         if i == 0:
                             media_album_p.append(
                                 InputMediaPhoto(
                                     media=image,
-                                    caption=caption,
+                                    caption=bot.me.first_name,
                                     parse_mode=enums.ParseMode.HTML
                                 )
                             )
@@ -337,12 +342,13 @@ async def youtube_dl_call_back(bot: Client, update: CallbackQuery):
                     media=media_album_p
                 )
                 if client.config.DUMP_ID:
-                    await bot.copy_media_group(client.config.DUMP_ID, from_chat_id=update.from_user.id, message_id=media_group[0].media_group_id, captions=f'User Name: {update.from_user.first_name}\nUser ID: {update.from_user.id}\nLink: {youtube_dl_url}')
+                    await bot.copy_media_group(client.config.DUMP_ID, from_chat_id=update.from_user.id, message_id=media_group[0].id, captions=f'User Name: {update.from_user.first_name}\nUser ID: {update.from_user.id}\nLink: {youtube_dl_url}')
                 for photo in media_album_p:
                     os.remove(photo.media)
             os.remove(download_directory)
             if not client.custom_thumbnail.get(update.from_user.id):
-                os.remove(thumb_image_path)
+                if thumb_image_path and os.path.isfile(thumb_image_path):
+                    os.remove(thumb_image_path)
             await bot.edit_message_text(
                 text=client.translation.AFTER_SUCCESSFUL_UPLOAD_MSG_WITH_TS.format(
                     time_taken_for_download, time_taken_for_upload),
